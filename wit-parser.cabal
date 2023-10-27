@@ -22,8 +22,13 @@ common warnings
 executable wit-parser
     import:           warnings
     main-is:          Main.hs
+    ghc-options: -threaded
     build-depends:    
         base ^>=4.17.2.0,
-        net-mqtt
+        net-mqtt,
+        network-uri,
+        bytestring,
+        text,
+        utf8-string
     hs-source-dirs:   app
     default-language: GHC2021
