@@ -1,0 +1,29 @@
+cabal-version:      3.4
+name:               wit-parser
+
+version:            0.1.0.0
+
+license:            WTFPL
+license-file:       LICENSE
+author:             crosstyan
+maintainer:         crosstyan@outlook.com
+
+-- A copyright notice.
+-- copyright:
+category:           Codec
+build-type:         Simple
+
+-- Extra doc files to be distributed with the package, such as a CHANGELOG or a README.
+extra-doc-files:    CHANGELOG.md
+
+common warnings
+    ghc-options: -Wall
+
+executable wit-parser
+    import:           warnings
+    main-is:          Main.hs
+    build-depends:    
+        base ^>=4.17.2.0,
+        net-mqtt
+    hs-source-dirs:   app
+    default-language: GHC2021
