@@ -1,6 +1,3 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
-{-# HLINT ignore "Use tuple-section" #-}
 module Main where
 
 import Codec.Binary.UTF8.String (encode)
@@ -9,7 +6,6 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.List (intercalate)
 import Data.Maybe (catMaybes, fromJust, isJust)
-import Data.Text qualified
 import Data.Text qualified as Tx
 import Flow
 import Network.MQTT.Client (MQTTConfig (_msgCB))
@@ -36,7 +32,7 @@ main = do
   -- SimpleCallback (MQTTClient -> Topic -> BL.ByteString -> [Property] -> IO ())
   let cb = MC.SimpleCallback $ \_ t p _ -> print $ "topic=" <> show t <> ", payload=" <> show p
   let sub_topics = ["/wit/+/data", "/test/#"]
-  let subs = fmap (mkFilter . Tx.pack) sub_topics |> catMaybes |> fmap (\x -> (x, MC.subOptions))
+  let subs = fmap (mkFilter . Tx.pack) sub_topics |> catMaybes |> fmap (, MC.subOptions) 
   -- mqttConfig is a default configuration for MQTT client
   -- https://github.com/dustin/mqtt-hs/blob/6b7c0ef075159fbd836a04ebcc8565419aa4638c/src/Network/MQTT/Client.hs#L148-L162
   mc <- MC.connectURI MC.mqttConfig {_msgCB = cb} url
