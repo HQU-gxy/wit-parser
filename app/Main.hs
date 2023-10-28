@@ -1,13 +1,20 @@
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Use tuple-section" #-}
 module Main where
 
 import Codec.Binary.UTF8.String (encode)
 import Control.Exception (throw, try)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
-import Data.Maybe (isJust)
+import Data.List (intercalate)
+import Data.Maybe (catMaybes, fromJust, isJust)
 import Data.Text qualified
+import Data.Text qualified as Tx
+import Flow
+import Network.MQTT.Client (MQTTConfig (_msgCB))
 import Network.MQTT.Client qualified as MC
-import Network.MQTT.Topic (mkTopic)
+import Network.MQTT.Topic (mkFilter, mkTopic)
 import Network.URI (parseURI)
 import Prelude
 
@@ -17,7 +24,7 @@ import Prelude
 -- https://stackoverflow.com/questions/69327798/how-to-use-exceptt-to-replace-lots-of-io-either-a-b
 publishWithString :: MC.MQTTClient -> String -> String -> Bool -> IO (Either MC.MQTTException ())
 publishWithString c t p = do
-  case mkTopic $ Data.Text.pack t of
+  case mkTopic $ Tx.pack t of
     Nothing -> throw $ MC.MQTTException $ "Invalid topic: " <> t
     Just topic -> do
       let payload = LBS.pack $ encode p
@@ -25,9 +32,14 @@ publishWithString c t p = do
 
 main :: IO ()
 main = do
-  let Just url = parseURI "mqtt://weihua-iot.cn:1883"
-  mc <- MC.connectURI MC.mqttConfig url
-  result <- publishWithString mc "test" "hello" False
-  case result of
-    Left e -> print e
-    Right _ -> print "ok"
+  let url = fromJust $ parseURI "mqtt://weihua-iot.cn:1883"
+  -- SimpleCallback (MQTTClient -> Topic -> BL.ByteString -> [Property] -> IO ())
+  let cb = MC.SimpleCallback $ \_ t p _ -> print $ "topic=" <> show t <> ", payload=" <> show p
+  let sub_topics = ["/wit/+/data", "/test/#"]
+  let subs = fmap (mkFilter . Tx.pack) sub_topics |> catMaybes |> fmap (\x -> (x, MC.subOptions))
+  -- mqttConfig is a default configuration for MQTT client
+  -- https://github.com/dustin/mqtt-hs/blob/6b7c0ef075159fbd836a04ebcc8565419aa4638c/src/Network/MQTT/Client.hs#L148-L162
+  mc <- MC.connectURI MC.mqttConfig {_msgCB = cb} url
+  _ <- MC.subscribe mc subs []
+  _ <- print $ "subscribe to: " <> intercalate ", " sub_topics
+  MC.waitForClient mc
