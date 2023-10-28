@@ -31,6 +31,7 @@ executable wit-parser
         text,
         utf8-string,
         transformers,
-        flow
+        flow,
+        simple-logger
     hs-source-dirs:   app
     default-language: GHC2021
