@@ -25,6 +25,7 @@ import Data.Aeson
 import Data.Binary.Get
 import Data.ByteString qualified as B
 import Data.ByteString.Lazy qualified as BL
+import Data.Int (Int16, Int8)
 import Data.Maybe (catMaybes, fromJust)
 import Data.Text qualified as T
 import Data.Word
@@ -37,14 +38,14 @@ import Network.MQTT.Topic qualified as MC
 import Network.URI (parseURI)
 import Prelude hiding (log)
 
-accCoef :: Double
-accCoef = 1 / 32768 * 16
+accelCoef :: Double
+accelCoef = (1 / 32768) * 16
 
-gyroCoef :: Double
-gyroCoef = 1 / 32768 * 2000
+angleVelCoef :: Double
+angleVelCoef = 1 / 32768 * 2000
 
-angleCoef :: Double
-angleCoef = 1 / 32768 * 180
+degreeCoef :: Double
+degreeCoef = 1 / 32768 * 180
 
 witHeader :: Word8
 witHeader = 0x55
@@ -64,26 +65,26 @@ magneticReg = 0x3A
 data GyroData = GyroData
   { -- X, Y, Z linear accerleration
     -- with unit of g
-    acc :: (Double, Double, Double)
+    accel :: (Double, Double, Double)
   , -- roll, pitch, yaw
     -- with unit of degree
-    gyro :: (Double, Double, Double)
+    angleVel :: (Double, Double, Double)
   , -- angle accerleration
     -- with unit of degree/s
-    angleAcc :: (Double, Double, Double)
+    angle :: (Double, Double, Double)
   }
   deriving (Generic)
   deriving
     (ToJSON)
     via CustomJSON '[FieldLabelModifier '[CamelToSnake]] GyroData
 
-magneticCoef :: Int
+magneticCoef :: Int16
 magneticCoef = 1
 
 newtype MagneticData = MagneticData
   { -- X, Y, Z magnetic field
     -- with unit of mG (milligauss)
-    magnetic :: (Int, Int, Int)
+    magnetic :: (Int16, Int16, Int16)
   }
   deriving (Show, Eq, ToJSON)
 
@@ -160,7 +161,7 @@ decodeQuaternionData = do
   z <- getWord16le
   pure
     $ QuaternionData
-      { quaternion = (w, x, y, z) |> map4Tuple ((* quaternionCoef) . fromIntegral)
+      { quaternion = (w, x, y, z) |> map4Tuple ((* quaternionCoef) . fromSignedWord16)
       }
 
 decodeTemperatureData :: Get TemperatureData
@@ -168,8 +169,13 @@ decodeTemperatureData = do
   temp <- getWord16le
   pure
     $ TemperatureData
-      { temperature = fromIntegral temp * tempCoef
+      { temperature = fromSignedWord16 temp * tempCoef
       }
+
+-- if you use (fromIntegral::Word16 -> Double) directly
+-- you would get a unsigned value
+fromSignedWord16 :: Word16 -> Double
+fromSignedWord16 = (fromIntegral :: Int16 -> Double) . fromIntegral
 
 decodeGyroData :: Get GyroData
 decodeGyroData = do
@@ -184,9 +190,9 @@ decodeGyroData = do
   yaw <- getWord16le
   pure
     $ GyroData
-      { acc = (accX, accY, accZ) |> map3Tuple ((* accCoef) . fromIntegral)
-      , gyro = (angleX, angleY, angleZ) |> map3Tuple ((* gyroCoef) . fromIntegral)
-      , angleAcc = (roll, pitch, yaw) |> map3Tuple ((* angleCoef) . fromIntegral)
+      { accel = (accX, accY, accZ) |> map3Tuple ((* accelCoef) . fromSignedWord16)
+      , angleVel = (angleX, angleY, angleZ) |> map3Tuple ((* angleVelCoef) . fromSignedWord16)
+      , angle = (roll, pitch, yaw) |> map3Tuple ((* degreeCoef) . fromSignedWord16)
       }
 
 decodeMagneticData :: Get MagneticData
@@ -197,7 +203,7 @@ decodeMagneticData = do
   magZ <- getWord16le
   pure
     $ MagneticData
-      { magnetic = (magX, magY, magZ) |> map3Tuple ((* magneticCoef) . fromIntegral)
+      { magnetic = (magX, magY, magZ) |> map3Tuple ((* magneticCoef) . (fromIntegral :: Word16 -> Int16))
       }
 
 -- https://zenn.dev/tobi462/articles/4ae7658d126054
@@ -228,7 +234,7 @@ handleMessage :: MC.MQTTClient -> Topic -> BL.ByteString -> [MC.Property] -> IO 
 handleMessage c t p _ = do
   let topic = unTopic t
   -- let payload = BL.unpack p |> UTF8.decode |> T.pack
-  logInfo $ "topic=" <> topic <> ", length=" <> T.pack (show (BL.length p))
+  -- logInfo $ "topic=" <> topic <> ", length=" <> T.pack (show (BL.length p))
   -- Why? how the fuck is this monad trans work?
   result <- runExceptT $ ExceptT (pure $ runGet decodeData p)
   case result of
@@ -243,7 +249,7 @@ handleMessage c t p _ = do
         Just (Just newTopic) -> do
           let bl = encode d
           let s = BL.unpack bl |> UTF8.decode |> T.pack
-          logInfo $ "topic=" <> topic <> ", payload=" <> s
+          logInfo $ "topic=" <> unTopic newTopic <> ", payload=" <> s
           MC.publish c newTopic bl False
         _ -> logError $ "invalid topic" <> topic
 
