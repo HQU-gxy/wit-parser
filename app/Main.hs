@@ -1,3 +1,6 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ExtendedDefaultRules #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -13,21 +16,24 @@
 
 module Main where
 
-import Codec.Binary.UTF8.String (decode, encode)
+import Codec.Binary.UTF8.String qualified as UTF8
 import Control.Exception (throw, try)
 import Control.Logger.Simple
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Except
+import Data.Aeson
 import Data.Binary.Get
 import Data.ByteString qualified as B
 import Data.ByteString.Lazy qualified as BL
 import Data.Maybe (catMaybes, fromJust)
 import Data.Text qualified as T
 import Data.Word
+import Deriving.Aeson
 import Flow
 import Network.MQTT.Client (MQTTConfig (_msgCB))
 import Network.MQTT.Client qualified as MC
 import Network.MQTT.Topic (Topic (unTopic), mkFilter, mkTopic)
+import Network.MQTT.Topic qualified as MC
 import Network.URI (parseURI)
 import Prelude hiding (log)
 
@@ -54,7 +60,6 @@ quaternionReg = 0x51
 magneticReg :: Word8
 magneticReg = 0x3A
 
-
 -- https://wit-motion.yuque.com/wumwnr/docs/gpare3
 data GyroData = GyroData
   { -- X, Y, Z linear accerleration
@@ -67,7 +72,10 @@ data GyroData = GyroData
     -- with unit of degree/s
     angleAcc :: (Double, Double, Double)
   }
-  deriving (Show, Eq)
+  deriving (Generic)
+  deriving
+    (ToJSON)
+    via CustomJSON '[FieldLabelModifier '[CamelToSnake]] GyroData
 
 magneticCoef :: Int
 magneticCoef = 1
@@ -77,7 +85,7 @@ newtype MagneticData = MagneticData
     -- with unit of mG (milligauss)
     magnetic :: (Int, Int, Int)
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, ToJSON)
 
 quaternionCoef :: Double
 quaternionCoef = 1 / 32768
@@ -87,7 +95,7 @@ newtype QuaternionData = QuaternionData
     -- with unit of 1
     quaternion :: (Double, Double, Double, Double)
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, ToJSON)
 
 tempCoef :: Double
 tempCoef = 1 / 100
@@ -96,11 +104,13 @@ newtype TemperatureData = TemperatureData
     -- with unit of Celsius
     temperature :: Double
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, ToJSON)
 
-data WitData = Gyro GyroData | Magnetic MagneticData | Quaternion QuaternionData | Temperature TemperatureData deriving (Show, Eq)
+data WitData = Gyro GyroData | Magnetic MagneticData | Quaternion QuaternionData | Temperature TemperatureData
+  deriving (Generic)
+  deriving (ToJSON) via CustomJSON '[FieldLabelModifier '[CamelToSnake]] WitData
 
-data ParseException = BadHeader | BadFlag | BadLength deriving (Show, Eq, Enum)
+data ParseException = BadHeader | BadFlag | BadLength | BadRegister deriving (Show, Eq, Enum)
 
 -- https://stackoverflow.com/questions/9722689/haskell-how-to-map-a-tuple
 map4Tuple :: (a -> b) -> (a, a, a, a) -> (b, b, b, b)
@@ -139,7 +149,7 @@ decodeData = runExceptT $ do
                 | reg == temperatureReg -> do
                     d <- lift decodeTemperatureData
                     lift $ pure $ Temperature d
-                | otherwise -> except $ Left BadFlag
+                | otherwise -> except $ Left BadRegister
             else except $ Left BadFlag
 
 decodeQuaternionData :: Get QuaternionData
@@ -199,14 +209,43 @@ publishWithString c t p = do
   case mkTopic $ T.pack t of
     Nothing -> throw $ MC.MQTTException $ "Invalid topic: " <> t
     Just topic -> do
-      let payload = BL.pack $ encode p
+      let payload = BL.pack $ UTF8.encode p
       try . MC.publish c topic payload
+
+-- old topic -> new suffix -> new topic
+fromOldTopic :: T.Text -> T.Text -> Maybe T.Text
+fromOldTopic topic suffix = do
+  let xs = T.splitOn "/" topic
+  let prefix = xs !! 1
+  if prefix /= "wit"
+    then Nothing
+    else do
+      let id = xs !! 2
+      let newTopic = T.intercalate "/" [prefix, id, suffix]
+      Just newTopic
 
 handleMessage :: MC.MQTTClient -> Topic -> BL.ByteString -> [MC.Property] -> IO ()
 handleMessage c t p _ = do
   let topic = unTopic t
-  let payload = BL.unpack p |> decode |> T.pack
-  logInfo $ "topic=" <> topic <> ", payload=" <> payload
+  -- let payload = BL.unpack p |> UTF8.decode |> T.pack
+  logInfo $ "topic=" <> topic <> ", length=" <> T.pack (show (BL.length p))
+  -- Why? how the fuck is this monad trans work?
+  result <- runExceptT $ ExceptT (pure $ runGet decodeData p)
+  case result of
+    Left e -> logError $ "parse error: " <> T.pack (show e)
+    Right d -> do
+      let suffix = case d of
+            Gyro _ -> "gyro"
+            Magnetic _ -> "magnetic"
+            Temperature _ -> "temperature"
+            Quaternion _ -> "quaternion"
+      case MC.mkTopic <$> fromOldTopic topic suffix of
+        Just (Just newTopic) -> do
+          let bl = encode d
+          let s = BL.unpack bl |> UTF8.decode |> T.pack
+          logInfo $ "topic=" <> topic <> ", payload=" <> s
+          MC.publish c newTopic bl False
+        _ -> logError $ "invalid topic" <> topic
 
 main :: IO ()
 main = withGlobalLogging (LogConfig Nothing True)
@@ -214,7 +253,7 @@ main = withGlobalLogging (LogConfig Nothing True)
     let url = fromJust $ parseURI "mqtt://weihua-iot.cn:1883"
     -- SimpleCallback (MQTTClient -> Topic -> BL.ByteString -> [Property] -> IO ())
     let cb = MC.SimpleCallback handleMessage
-    let sub_topics = ["/wit/+/data", "/test/#"]
+    let sub_topics = ["/wit/+/data"]
     let subs = fmap mkFilter sub_topics |> catMaybes |> fmap (,MC.subOptions)
     -- mqttConfig is a default configuration for MQTT client
     -- https://github.com/dustin/mqtt-hs/blob/6b7c0ef075159fbd836a04ebcc8565419aa4638c/src/Network/MQTT/Client.hs#L148-L162
