@@ -259,5 +259,5 @@ main = withGlobalLogging (LogConfig Nothing True)
     -- https://github.com/dustin/mqtt-hs/blob/6b7c0ef075159fbd836a04ebcc8565419aa4638c/src/Network/MQTT/Client.hs#L148-L162
     mc <- MC.connectURI MC.mqttConfig{_msgCB = cb} url
     _ <- MC.subscribe mc subs []
-    logInfo $ "suBcribe to: " <> T.intercalate ", " sub_topics
+    logInfo $ "subscribe to: " <> T.intercalate ", " sub_topics
     MC.waitForClient mc
