@@ -232,7 +232,7 @@ fromOldTopic topic suffix = do
     else do
       let id = xs !! 2
       let newTopic = T.intercalate "/" [prefix, id, suffix]
-      Just newTopic
+      Just $ "/" <> newTopic
 
 handleMessage :: MC.MQTTClient -> Topic -> BL.ByteString -> [MC.Property] -> IO ()
 handleMessage c t p _ = do
