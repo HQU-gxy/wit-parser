@@ -30,6 +30,10 @@ import Data.Maybe (catMaybes, fromJust)
 import Data.Text qualified as T
 import Data.Word
 import Deriving.Aeson
+    ( Generic,
+      CamelToSnake,
+      FieldLabelModifier,
+      CustomJSON(CustomJSON), SumUntaggedValue )
 import Flow
 import Network.MQTT.Client (MQTTConfig (_msgCB))
 import Network.MQTT.Client qualified as MC
@@ -109,7 +113,7 @@ newtype TemperatureData = TemperatureData
 
 data WitData = Gyro GyroData | Magnetic MagneticData | Quaternion QuaternionData | Temperature TemperatureData
   deriving (Generic)
-  deriving (ToJSON) via CustomJSON '[FieldLabelModifier '[CamelToSnake]] WitData
+  deriving (ToJSON) via CustomJSON '[FieldLabelModifier '[CamelToSnake], SumUntaggedValue] WitData
 
 data ParseException = BadHeader | BadFlag | BadLength | BadRegister deriving (Show, Eq, Enum)
 
