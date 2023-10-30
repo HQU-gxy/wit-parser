@@ -67,13 +67,13 @@ magneticReg = 0x3A
 
 -- https://wit-motion.yuque.com/wumwnr/docs/gpare3
 data GyroData = GyroData
-  { -- X, Y, Z linear accerleration
+  { -- X, Y, Z linear acceleration
     -- with unit of g
     accel :: (Double, Double, Double)
   , -- roll, pitch, yaw
     -- with unit of degree
     angleVel :: (Double, Double, Double)
-  , -- angle accerleration
+  , -- angle acceleration
     -- with unit of degree/s
     angle :: (Double, Double, Double)
   }
