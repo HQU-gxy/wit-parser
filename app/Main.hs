@@ -246,8 +246,7 @@ handleMessage c t p _ = do
   let topic = unTopic t
   -- let payload = BL.unpack p |> UTF8.decode |> T.pack
   -- logInfo $ "topic=" <> topic <> ", length=" <> T.pack (show (BL.length p))
-  -- Why? how the fuck is this monad trans work?
-  result <- runExceptT $ ExceptT (pure $ runGet decodeData p)
+  let result = runGet decodeData p
   case result of
     Left e -> logError $ "parse error: " <> T.pack (show e)
     Right d -> do
@@ -262,7 +261,7 @@ handleMessage c t p _ = do
           let s = BL.unpack bl |> UTF8.decode |> T.pack
           logInfo $ "topic=" <> unTopic newTopic <> ", payload=" <> s
           MC.publish c newTopic bl False
-        _ -> logError $ "invalid topic" <> topic
+        _ -> logError $ "invalid topic " <> topic
 
 main :: IO ()
 main = withGlobalLogging (LogConfig Nothing True)
