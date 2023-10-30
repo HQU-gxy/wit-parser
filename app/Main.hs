@@ -18,6 +18,7 @@ module Main where
 
 import Codec.Binary.UTF8.String qualified as UTF8
 import Control.Exception (throw, try)
+import Control.Lens (element, (^?))
 import Control.Logger.Simple
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Except
@@ -29,11 +30,13 @@ import Data.Int (Int16, Int8)
 import Data.Maybe (catMaybes, fromJust)
 import Data.Text qualified as T
 import Data.Word
-import Deriving.Aeson
-    ( Generic,
-      CamelToSnake,
-      FieldLabelModifier,
-      CustomJSON(CustomJSON), SumUntaggedValue )
+import Deriving.Aeson (
+  CamelToSnake,
+  CustomJSON (CustomJSON),
+  FieldLabelModifier,
+  Generic,
+  SumUntaggedValue,
+ )
 import Flow
 import Network.MQTT.Client (MQTTConfig (_msgCB))
 import Network.MQTT.Client qualified as MC
@@ -123,6 +126,9 @@ map4Tuple f (a, b, c, d) = (f a, f b, f c, f d)
 
 map3Tuple :: (a -> b) -> (a, a, a) -> (b, b, b)
 map3Tuple f (a, b, c) = (f a, f b, f c)
+
+map2Tuple :: (a -> b) -> (a, a) -> (b, b)
+map2Tuple f (a, b) = (f a, f b)
 
 -- https://hackage.haskell.org/package/parsec
 -- https://wiki.haskell.org/Dealing_with_binary_data
@@ -226,11 +232,12 @@ publishWithString c t p = do
 fromOldTopic :: T.Text -> T.Text -> Maybe T.Text
 fromOldTopic topic suffix = do
   let xs = T.splitOn "/" topic
-  let prefix = xs !! 1
+  -- https://stackoverflow.com/questions/5217171/how-can-i-get-nth-element-from-a-list
+  prefix <- xs ^? element 2
   if prefix /= "wit"
     then Nothing
     else do
-      let id = xs !! 2
+      id <- xs ^? element 2
       let newTopic = T.intercalate "/" [prefix, id, suffix]
       Just $ "/" <> newTopic
 
