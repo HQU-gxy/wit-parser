@@ -20,6 +20,7 @@ import Codec.Binary.UTF8.String qualified as UTF8
 import Control.Exception (throw, try)
 import Control.Lens (element, (^?))
 import Control.Logger.Simple
+import Control.Monad (join)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Except
 import Data.Aeson
@@ -255,8 +256,8 @@ handleMessage c t p _ = do
             Magnetic _ -> "magnetic"
             Temperature _ -> "temperature"
             Quaternion _ -> "quaternion"
-      case MC.mkTopic <$> fromOldTopic topic suffix of
-        Just (Just newTopic) -> do
+      case MC.mkTopic =<< fromOldTopic topic suffix of
+        Just newTopic -> do
           let bl = encode d
           let s = BL.unpack bl |> UTF8.decode |> T.pack
           logInfo $ "topic=" <> unTopic newTopic <> ", payload=" <> s
