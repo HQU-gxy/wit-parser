@@ -234,7 +234,7 @@ fromOldTopic :: T.Text -> T.Text -> Maybe T.Text
 fromOldTopic topic suffix = do
   let xs = T.splitOn "/" topic
   -- https://stackoverflow.com/questions/5217171/how-can-i-get-nth-element-from-a-list
-  prefix <- xs ^? element 2
+  prefix <- xs ^? element 1
   if prefix /= "wit"
     then Nothing
     else do
